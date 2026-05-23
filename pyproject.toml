@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "advection-scheme-lab"
+version = "0.1.0"
+description = "Pure-Python experiments for linear advection scheme tradeoffs"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "Jarbas"}]
+
+[tool.setuptools.packages.find]
+include = ["advectionlab*"]
