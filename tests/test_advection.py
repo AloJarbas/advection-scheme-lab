@@ -32,6 +32,26 @@ class AdvectionTests(unittest.TestCase):
         self.assertLess(rows["upwind"].overshoot, 1e-9)
         self.assertLess(rows["lax-friedrichs"].overshoot, 1e-9)
 
+    def test_tvd_minmod_opens_a_middle_lane(self) -> None:
+        rows = {
+            (row.profile_key, row.scheme_key): row
+            for row in study_transport(
+                schemes=("upwind", "lax-friedrichs", "lax-wendroff", "tvd-minmod"),
+                requested_cfls=(0.9,),
+            )
+        }
+        gaussian_minmod = rows[("gaussian", "tvd-minmod")]
+        gaussian_upwind = rows[("gaussian", "upwind")]
+        gaussian_lw = rows[("gaussian", "lax-wendroff")]
+        square_minmod = rows[("square", "tvd-minmod")]
+        square_lw = rows[("square", "lax-wendroff")]
+        self.assertLess(gaussian_minmod.l2_error, gaussian_upwind.l2_error)
+        self.assertGreater(gaussian_minmod.l2_error, gaussian_lw.l2_error)
+        self.assertLess(square_minmod.overshoot, 1e-9)
+        self.assertLess(square_minmod.undershoot, 1e-9)
+        self.assertLess(square_minmod.l2_error, square_lw.l2_error)
+        self.assertLess(square_minmod.total_variation_ratio, 1.000001)
+
     def test_one_turn_keeps_exact_gaussian_shape(self) -> None:
         run = simulate_transport("upwind", "gaussian", requested_cfl=0.9)
         self.assertAlmostEqual(run.initial[0], run.exact[0], places=12)

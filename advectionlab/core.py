@@ -52,6 +52,7 @@ SCHEME_TITLES = {
     "upwind": "Upwind",
     "lax-friedrichs": "Lax-Friedrichs",
     "lax-wendroff": "Lax-Wendroff",
+    "tvd-minmod": "TVD minmod",
 }
 
 
@@ -104,10 +105,28 @@ def step_lax_wendroff(samples: list[float], cfl: float) -> list[float]:
     return next_samples
 
 
+def minmod_limiter(ratio: float) -> float:
+    return max(0.0, min(1.0, ratio))
+
+
+def step_tvd_minmod(samples: list[float], cfl: float) -> list[float]:
+    fluxes: list[float] = []
+    for index, value in enumerate(samples):
+        forward_difference = _periodic(samples, index + 1) - value
+        backward_difference = value - _periodic(samples, index - 1)
+        if abs(forward_difference) < 1e-14:
+            limiter = 1.0 if abs(backward_difference) < 1e-14 else 0.0
+        else:
+            limiter = minmod_limiter(backward_difference / forward_difference)
+        fluxes.append(value + 0.5 * (1.0 - cfl) * limiter * forward_difference)
+    return [value - cfl * (fluxes[index] - fluxes[index - 1]) for index, value in enumerate(samples)]
+
+
 SCHEME_STEPS = {
     "upwind": step_upwind,
     "lax-friedrichs": step_lax_friedrichs,
     "lax-wendroff": step_lax_wendroff,
+    "tvd-minmod": step_tvd_minmod,
 }
 
 

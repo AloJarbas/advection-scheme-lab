@@ -9,7 +9,7 @@ import tempfile
 
 from .analysis import amplitude_curve, phase_speed_ratio_curve, study_transport
 from .core import simulate_transport
-from .render import render_tradeoff_svg, write_svg
+from .render import render_limiter_followup_svg, render_tradeoff_svg, write_svg
 
 
 def export_png(svg_path: Path, png_path: Path) -> None:
@@ -66,6 +66,19 @@ def write_transport_csv(output: Path) -> None:
             writer.writerow(row.as_dict())
 
 
+def write_limiter_followup_csv(output: Path) -> None:
+    rows = study_transport(
+        schemes=("upwind", "lax-friedrichs", "lax-wendroff", "tvd-minmod"),
+        requested_cfls=(0.4, 0.7, 0.9),
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0].as_dict().keys()), lineterminator="\n")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row.as_dict())
+
+
 def render_overview(svg_output: Path, png_output: Path | None = None, *, cfl: float = 0.9) -> None:
     amplitude_curves = {scheme: amplitude_curve(scheme, cfl) for scheme in ("upwind", "lax-friedrichs", "lax-wendroff")}
     phase_curves = {scheme: phase_speed_ratio_curve(scheme, cfl) for scheme in ("upwind", "lax-friedrichs", "lax-wendroff")}
@@ -73,6 +86,17 @@ def render_overview(svg_output: Path, png_output: Path | None = None, *, cfl: fl
     square_runs = {scheme: simulate_transport(scheme, "square", requested_cfl=cfl) for scheme in ("upwind", "lax-friedrichs", "lax-wendroff")}
     rows = study_transport(requested_cfls=(0.4, 0.7, cfl))
     svg = render_tradeoff_svg(amplitude_curves, phase_curves, gaussian_runs, square_runs, rows)
+    write_svg(svg, svg_output)
+    if png_output is not None:
+        export_png(svg_output, png_output)
+
+
+def render_limiter_followup(svg_output: Path, png_output: Path | None = None, *, cfl: float = 0.9) -> None:
+    followup_schemes = ("upwind", "lax-friedrichs", "lax-wendroff", "tvd-minmod")
+    gaussian_runs = {scheme: simulate_transport(scheme, "gaussian", requested_cfl=cfl) for scheme in followup_schemes}
+    square_runs = {scheme: simulate_transport(scheme, "square", requested_cfl=cfl) for scheme in followup_schemes}
+    rows = study_transport(schemes=followup_schemes, requested_cfls=(0.4, 0.7, cfl))
+    svg = render_limiter_followup_svg(gaussian_runs, square_runs, rows)
     write_svg(svg, svg_output)
     if png_output is not None:
         export_png(svg_output, png_output)
@@ -90,6 +114,14 @@ def build_parser() -> argparse.ArgumentParser:
     csv_parser = subparsers.add_parser("write-csv", help="write the transport comparison CSV")
     csv_parser.add_argument("--output", required=True)
 
+    render_limiter_parser = subparsers.add_parser("render-limiter-followup", help="render the TVD limiter follow-up SVG and optional PNG")
+    render_limiter_parser.add_argument("--output", required=True)
+    render_limiter_parser.add_argument("--png-output")
+    render_limiter_parser.add_argument("--cfl", type=float, default=0.9)
+
+    limiter_csv_parser = subparsers.add_parser("write-limiter-csv", help="write the TVD limiter follow-up CSV")
+    limiter_csv_parser.add_argument("--output", required=True)
+
     return parser
 
 
@@ -101,6 +133,12 @@ def main() -> None:
         return
     if args.command == "write-csv":
         write_transport_csv(Path(args.output))
+        return
+    if args.command == "render-limiter-followup":
+        render_limiter_followup(Path(args.output), Path(args.png_output) if args.png_output else None, cfl=args.cfl)
+        return
+    if args.command == "write-limiter-csv":
+        write_limiter_followup_csv(Path(args.output))
         return
     raise ValueError(f"unknown command: {args.command}")
 
