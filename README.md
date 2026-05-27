@@ -12,6 +12,7 @@ This repo opens with a tight first packet instead of a vague promise:
 - one-turn transport comparisons for a Gaussian pulse and a square pulse
 - a generated SVG/PNG figure, CSV sidecar, report, notebook, and tests
 - a TVD minmod follow-up that adds a real middle lane instead of pretending the choice is only blur versus ringing
+- a CFL sweep follow-up that shows the old ranking compressing when the timestep itself becomes almost a pure grid shift
 
 ## Thesis
 
@@ -43,6 +44,11 @@ python3 -m advectionlab.cli render-limiter-followup \
   --output assets/advection-minmod-limiter-followup.svg \
   --png-output assets/advection-minmod-limiter-followup.png
 python3 -m advectionlab.cli write-limiter-csv --output assets/advection-minmod-limiter-followup.csv
+python3 scripts/generate_cfl_sweep_followup.py
+python3 -m advectionlab.cli render-cfl-sweep-followup \
+  --output assets/advection-cfl-sweep-followup.svg \
+  --png-output assets/advection-cfl-sweep-followup.png
+python3 -m advectionlab.cli write-cfl-sweep-csv --output assets/advection-cfl-sweep-followup.csv
 ```
 
 ## Repo layout
@@ -53,6 +59,7 @@ python3 -m advectionlab.cli write-limiter-csv --output assets/advection-minmod-l
 - `advectionlab/cli.py` exposes rebuild commands
 - `scripts/generate_gallery.py` regenerates the figure, CSV, report, and notebook
 - `scripts/generate_limiter_followup.py` regenerates the limiter follow-up figure, CSV, report, and notebook
+- `scripts/generate_cfl_sweep_followup.py` regenerates the CFL sweep follow-up figure, CSV, report, and notebook
 - `reports/linear-advection-scheme-tradeoffs.md` gives the first bounded read
 - `notebooks/advection_scheme_tradeoffs.ipynb` is the companion notebook
 
@@ -78,6 +85,20 @@ It does something the opening three-scheme comparison could not:
 - and it makes the monotone-versus-sharp tradeoff feel like a real design curve instead of a binary choice.
 
 The repo still does not pretend the limiter wins every lane. On the smooth Gaussian, unrestricted Lax-Wendroff remains best. That is why the follow-up earns its own artifact instead of silently replacing the first packet.
+
+## CFL sweep follow-up
+
+![CFL sweep follow-up](assets/advection-cfl-sweep-followup.png)
+
+The next honest loophole is timestep geometry.
+
+If the update moves toward a one-cell shift, the old ranking starts to compress.
+
+- On the Gaussian, **Lax-Wendroff** still stays first.
+- On the square pulse, **TVD minmod** still owns the bounded lane until the endpoint.
+- But as CFL approaches 1 on this periodic one-turn problem, every scheme gets pulled toward the same exact grid-translation limit.
+
+That does not erase the earlier tradeoff. It just puts a clean boundary around it: away from unit CFL, scheme personality dominates; near unit CFL, the step itself does more of the work.
 
 ## Why this repo is worth its own home
 

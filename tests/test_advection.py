@@ -57,6 +57,21 @@ class AdvectionTests(unittest.TestCase):
         self.assertAlmostEqual(run.initial[0], run.exact[0], places=12)
         self.assertAlmostEqual(run.initial[17], run.exact[17], places=12)
 
+    def test_unit_cfl_is_exact_grid_shift_for_every_scheme_here(self) -> None:
+        for scheme_key in ("upwind", "lax-friedrichs", "lax-wendroff", "tvd-minmod"):
+            for profile_key in ("gaussian", "square"):
+                run = simulate_transport(scheme_key, profile_key, requested_cfl=1.0)
+                max_error = max(abs(approx - exact) for approx, exact in zip(run.numerical, run.exact))
+                self.assertLess(max_error, 1e-12, (scheme_key, profile_key))
+
+    def test_lax_wendroff_square_ripple_shrinks_toward_unit_cfl(self) -> None:
+        low = simulate_transport("lax-wendroff", "square", requested_cfl=0.4)
+        high = simulate_transport("lax-wendroff", "square", requested_cfl=0.95)
+        low_overshoot = max(0.0, max(low.numerical) - max(low.exact))
+        high_overshoot = max(0.0, max(high.numerical) - max(high.exact))
+        self.assertGreater(low_overshoot, high_overshoot)
+        self.assertGreater(high_overshoot, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
