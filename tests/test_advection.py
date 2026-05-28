@@ -52,6 +52,33 @@ class AdvectionTests(unittest.TestCase):
         self.assertLess(square_minmod.l2_error, square_lw.l2_error)
         self.assertLess(square_minmod.total_variation_ratio, 1.000001)
 
+    def test_tvd_limiter_family_splits_smooth_and_jump_lanes(self) -> None:
+        rows = {
+            (row.profile_key, row.scheme_key): row
+            for row in study_transport(
+                schemes=("lax-wendroff", "tvd-minmod", "tvd-mc", "tvd-superbee"),
+                requested_cfls=(0.95,),
+            )
+        }
+        gaussian_lw = rows[("gaussian", "lax-wendroff")]
+        gaussian_minmod = rows[("gaussian", "tvd-minmod")]
+        gaussian_mc = rows[("gaussian", "tvd-mc")]
+        gaussian_superbee = rows[("gaussian", "tvd-superbee")]
+        square_minmod = rows[("square", "tvd-minmod")]
+        square_mc = rows[("square", "tvd-mc")]
+        square_superbee = rows[("square", "tvd-superbee")]
+
+        self.assertLess(gaussian_mc.l2_error, gaussian_lw.l2_error)
+        self.assertLess(gaussian_lw.l2_error, gaussian_superbee.l2_error)
+        self.assertLess(gaussian_superbee.l2_error, gaussian_minmod.l2_error)
+
+        self.assertLess(square_superbee.l2_error, square_mc.l2_error)
+        self.assertLess(square_mc.l2_error, square_minmod.l2_error)
+        for row in (square_minmod, square_mc, square_superbee):
+            self.assertLess(row.overshoot, 1e-9)
+            self.assertLess(row.undershoot, 1e-9)
+            self.assertLess(abs(row.total_variation_ratio - 1.0), 1e-6)
+
     def test_one_turn_keeps_exact_gaussian_shape(self) -> None:
         run = simulate_transport("upwind", "gaussian", requested_cfl=0.9)
         self.assertAlmostEqual(run.initial[0], run.exact[0], places=12)

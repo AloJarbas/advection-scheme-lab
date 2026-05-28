@@ -53,6 +53,8 @@ SCHEME_TITLES = {
     "lax-friedrichs": "Lax-Friedrichs",
     "lax-wendroff": "Lax-Wendroff",
     "tvd-minmod": "TVD minmod",
+    "tvd-mc": "TVD MC",
+    "tvd-superbee": "TVD Superbee",
 }
 
 
@@ -109,7 +111,15 @@ def minmod_limiter(ratio: float) -> float:
     return max(0.0, min(1.0, ratio))
 
 
-def step_tvd_minmod(samples: list[float], cfl: float) -> list[float]:
+def mc_limiter(ratio: float) -> float:
+    return max(0.0, min(2.0 * ratio, 0.5 * (1.0 + ratio), 2.0))
+
+
+def superbee_limiter(ratio: float) -> float:
+    return max(0.0, max(min(2.0 * ratio, 1.0), min(ratio, 2.0)))
+
+
+def _step_tvd_limiter(samples: list[float], cfl: float, limiter_fn: Callable[[float], float]) -> list[float]:
     fluxes: list[float] = []
     for index, value in enumerate(samples):
         forward_difference = _periodic(samples, index + 1) - value
@@ -117,9 +127,21 @@ def step_tvd_minmod(samples: list[float], cfl: float) -> list[float]:
         if abs(forward_difference) < 1e-14:
             limiter = 1.0 if abs(backward_difference) < 1e-14 else 0.0
         else:
-            limiter = minmod_limiter(backward_difference / forward_difference)
+            limiter = limiter_fn(backward_difference / forward_difference)
         fluxes.append(value + 0.5 * (1.0 - cfl) * limiter * forward_difference)
     return [value - cfl * (fluxes[index] - fluxes[index - 1]) for index, value in enumerate(samples)]
+
+
+def step_tvd_minmod(samples: list[float], cfl: float) -> list[float]:
+    return _step_tvd_limiter(samples, cfl, minmod_limiter)
+
+
+def step_tvd_mc(samples: list[float], cfl: float) -> list[float]:
+    return _step_tvd_limiter(samples, cfl, mc_limiter)
+
+
+def step_tvd_superbee(samples: list[float], cfl: float) -> list[float]:
+    return _step_tvd_limiter(samples, cfl, superbee_limiter)
 
 
 SCHEME_STEPS = {
@@ -127,6 +149,8 @@ SCHEME_STEPS = {
     "lax-friedrichs": step_lax_friedrichs,
     "lax-wendroff": step_lax_wendroff,
     "tvd-minmod": step_tvd_minmod,
+    "tvd-mc": step_tvd_mc,
+    "tvd-superbee": step_tvd_superbee,
 }
 
 

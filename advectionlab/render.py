@@ -12,6 +12,8 @@ SCHEME_COLORS = {
     "lax-friedrichs": "#f97316",
     "lax-wendroff": "#16a34a",
     "tvd-minmod": "#7c3aed",
+    "tvd-mc": "#dc2626",
+    "tvd-superbee": "#0891b2",
     "exact": "#111827",
 }
 
@@ -631,6 +633,213 @@ def render_cfl_sweep_followup_svg(
             if x_min <= x_value <= x_max
         ]
         parts.append(_polyline(mapped, stroke=SCHEME_COLORS[scheme_key], width=2.7, dash=dash))
+
+    parts.append("</svg>")
+    return "\n".join(parts) + "\n"
+
+
+def render_limiter_family_followup_svg(
+    gaussian_runs: dict[str, SimulationRun],
+    square_runs: dict[str, SimulationRun],
+    rows: tuple[TransportRow, ...],
+) -> str:
+    width = 1760
+    height = 1220
+    left = 60
+    top = 198
+    right = width - 160
+    bottom = height - 72
+    panel_gap_x = 34
+    panel_gap_y = 46
+    panel_width = (right - left - panel_gap_x) / 2
+    panel_height = (bottom - top - panel_gap_y) / 2
+    focus_cfl = round(next(iter(gaussian_runs.values())).requested_cfl, 2)
+    followup_schemes = ("lax-wendroff", "tvd-minmod", "tvd-mc", "tvd-superbee")
+
+    def panel_rect(col: int, row: int) -> tuple[float, float]:
+        return left + col * (panel_width + panel_gap_x), top + row * (panel_height + panel_gap_y)
+
+    def chart_frame(col: int, row: int) -> tuple[float, float, float, float]:
+        panel_left, panel_top = panel_rect(col, row)
+        return panel_left + 70, panel_top + 118, panel_left + panel_width - 40, panel_top + panel_height - 58
+
+    def map_generic(
+        x_value: float,
+        y_value: float,
+        x0: float,
+        y0: float,
+        x1: float,
+        y1: float,
+        *,
+        y_min: float,
+        y_max: float,
+    ) -> tuple[float, float]:
+        x = x0 + x_value * (x1 - x0)
+        y = y1 - (y_value - y_min) / (y_max - y_min) * (y1 - y0)
+        return x, y
+
+    rows_by_key = {(row.profile_key, round(row.requested_cfl, 2), row.scheme_key): row for row in rows}
+    gaussian_focus_rows = {scheme: rows_by_key[("gaussian", focus_cfl, scheme)] for scheme in followup_schemes}
+    square_focus_rows = {scheme: rows_by_key[("square", focus_cfl, scheme)] for scheme in followup_schemes}
+    mc_gaussian = gaussian_focus_rows["tvd-mc"]
+    lw_gaussian = gaussian_focus_rows["lax-wendroff"]
+    superbee_square = square_focus_rows["tvd-superbee"]
+    mc_square = square_focus_rows["tvd-mc"]
+    minmod_square = square_focus_rows["tvd-minmod"]
+
+    gaussian_rows = [row for row in rows if row.profile_key == "gaussian"]
+    square_rows = [row for row in rows if row.profile_key == "square"]
+    cfl_min = min(row.requested_cfl for row in rows)
+    cfl_max = max(row.requested_cfl for row in rows)
+    gaussian_l2_max = max(row.l2_error for row in gaussian_rows) * 1.12
+    square_l2_max = max(row.l2_error for row in square_rows) * 1.12
+
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" fill="#fcfcfd"/>',
+        _text(width / 2, 46, "TVD limiter family follow-up: one bounded lane is not enough", size=31, anchor="middle", weight="700"),
+        _paragraph(
+            width / 2,
+            78,
+            [
+                f"At CFL {focus_cfl:.2f}, TVD MC cuts the Gaussian L2 error to {mc_gaussian.l2_error:.4f}, beating Lax-Wendroff's {lw_gaussian.l2_error:.4f} on this bounded smooth pulse.",
+                f"On the square pulse, TVD Superbee pushes the bounded edge further, dropping L2 error to {superbee_square.l2_error:.4f} versus MC's {mc_square.l2_error:.4f} and minmod's {minmod_square.l2_error:.4f}.",
+                "The useful read is the split itself: MC is the calmer smooth-wave limiter, Superbee is the sharper bounded jump limiter.",
+            ],
+            size=16,
+            fill="#475569",
+            line_height=21,
+            anchor="middle",
+        ),
+    ]
+    legend_y = 166
+    legend_items = [("exact", "exact")] + [(scheme, SCHEME_TITLES[scheme]) for scheme in followup_schemes]
+    x = 196
+    for key, label in legend_items:
+        dash = "7 5" if key == "exact" else None
+        parts.append(_line(x, legend_y, x + 28, legend_y, stroke=SCHEME_COLORS[key], width=3.5, dash=dash))
+        parts.append(_text(x + 40, legend_y + 5, label, size=14, fill="#111827"))
+        x += 150 if key == "exact" else 190
+
+    for row_index in range(2):
+        for col_index in range(2):
+            panel_left, panel_top = panel_rect(col_index, row_index)
+            parts.append(
+                f'<rect x="{panel_left:.1f}" y="{panel_top:.1f}" width="{panel_width:.1f}" height="{panel_height:.1f}" fill="#ffffff" stroke="#e5e7eb" rx="18"/>'
+            )
+
+    for col, run_group, title, subtitle_lines in (
+        (
+            0,
+            gaussian_runs,
+            f"Gaussian after one turn at CFL {focus_cfl:.2f}",
+            [
+                "MC is the bounded smooth-wave winner in this packet.",
+                "Superbee stays bounded too, but keeps a slightly rougher smooth profile.",
+            ],
+        ),
+        (
+            1,
+            square_runs,
+            f"Square pulse after one turn at CFL {focus_cfl:.2f}",
+            [
+                "All three TVD limiters stay monotone here.",
+                "Superbee keeps the sharpest bounded edge, while minmod gives away the most width.",
+            ],
+        ),
+    ):
+        plot_left, plot_top, plot_right, plot_bottom = chart_frame(col, 0)
+        panel_left, panel_top = panel_rect(col, 0)
+        parts.append(_text(panel_left + 24, panel_top + 34, title, size=20, weight="700"))
+        parts.append(_paragraph(panel_left + 24, panel_top + 56, subtitle_lines, size=13, line_height=16))
+        for step in range(6):
+            frac = step / 5
+            y_value = -0.2 + frac * 1.4
+            _, y = map_generic(0.0, y_value, plot_left, plot_top, plot_right, plot_bottom, y_min=-0.2, y_max=1.2)
+            parts.append(_line(plot_left, y, plot_right, y, stroke="#e5e7eb", dash="4 6"))
+            parts.append(_text(plot_left - 12, y + 5, f"{y_value:.1f}", size=12, anchor="end", fill="#64748b"))
+        x_min = 0.10
+        x_max = 0.50
+        for step in range(5):
+            frac = step / 4
+            tick_value = x_min + frac * (x_max - x_min)
+            x_tick = plot_left + frac * (plot_right - plot_left)
+            parts.append(_line(x_tick, plot_top, x_tick, plot_bottom, stroke="#f1f5f9", dash="4 6"))
+            parts.append(_text(x_tick, plot_bottom + 26, f"{tick_value:.2f}", size=12, anchor="middle", fill="#64748b"))
+        parts.append(_line(plot_left, plot_top, plot_left, plot_bottom, width=1.5))
+        parts.append(_line(plot_left, plot_bottom, plot_right, plot_bottom, width=1.5))
+        parts.append(_text((plot_left + plot_right) / 2, plot_bottom + 46, "x on the periodic interval", size=14, anchor="middle", fill="#334155", weight="600"))
+        exact_run = next(iter(run_group.values()))
+        exact_points = [
+            map_generic((x_value - x_min) / (x_max - x_min), y_value, plot_left, plot_top, plot_right, plot_bottom, y_min=-0.2, y_max=1.2)
+            for x_value, y_value in zip(exact_run.x_values, exact_run.exact)
+            if x_min <= x_value <= x_max
+        ]
+        parts.append(_polyline(exact_points, stroke=SCHEME_COLORS["exact"], width=2.5, dash="7 5"))
+        for scheme_key in followup_schemes:
+            run = run_group[scheme_key]
+            mapped = [
+                map_generic((x_value - x_min) / (x_max - x_min), y_value, plot_left, plot_top, plot_right, plot_bottom, y_min=-0.2, y_max=1.2)
+                for x_value, y_value in zip(run.x_values, run.numerical)
+                if x_min <= x_value <= x_max
+            ]
+            parts.append(_polyline(mapped, stroke=SCHEME_COLORS[scheme_key], width=2.7))
+
+    for col, profile_key, panel_title, subtitle_lines, y_max in (
+        (
+            0,
+            "gaussian",
+            "Gaussian L2 error across CFL",
+            [
+                "MC stays lowest on the smooth lane across this whole bounded sweep.",
+                "Superbee buys square-edge sharpness by giving some of that smooth calm back.",
+            ],
+            gaussian_l2_max,
+        ),
+        (
+            1,
+            "square",
+            "Square-pulse L2 error across CFL",
+            [
+                "Superbee leads the bounded jump lane across the sweep.",
+                "Minmod stays safest-looking, but it pays with the fattest edge.",
+            ],
+            square_l2_max,
+        ),
+    ):
+        chart_left, chart_top, chart_right, chart_bottom = chart_frame(col, 1)
+        panel_left, panel_top = panel_rect(col, 1)
+        parts.append(_text(panel_left + 24, panel_top + 34, panel_title, size=20, weight="700"))
+        parts.append(_paragraph(panel_left + 24, panel_top + 56, subtitle_lines, size=13, line_height=16))
+        for tick in range(6):
+            y_value = y_max * tick / 5
+            _, y = map_generic(0.0, y_value, chart_left, chart_top, chart_right, chart_bottom, y_min=0.0, y_max=y_max)
+            parts.append(_line(chart_left, y, chart_right, y, stroke="#e5e7eb", dash="4 6"))
+            parts.append(_text(chart_left - 12, y + 5, f"{y_value:.3f}", size=12, anchor="end", fill="#64748b"))
+        for tick_value in sorted({row.requested_cfl for row in rows}):
+            x_tick = chart_left + (tick_value - cfl_min) / (cfl_max - cfl_min) * (chart_right - chart_left)
+            parts.append(_line(x_tick, chart_top, x_tick, chart_bottom, stroke="#f1f5f9", dash="4 6"))
+            parts.append(_text(x_tick, chart_bottom + 26, f"{tick_value:.2f}", size=12, anchor="middle", fill="#64748b"))
+        parts.append(_line(chart_left, chart_top, chart_left, chart_bottom, width=1.5))
+        parts.append(_line(chart_left, chart_bottom, chart_right, chart_bottom, width=1.5))
+        parts.append(_text((chart_left + chart_right) / 2, chart_bottom + 46, "requested CFL", size=14, anchor="middle", fill="#334155", weight="600"))
+        parts.append(_text(chart_left, chart_top - 16, "L2 error", size=13, fill="#334155", weight="600"))
+        for scheme_key in followup_schemes:
+            curve = [
+                map_generic(
+                    (row.requested_cfl - cfl_min) / (cfl_max - cfl_min),
+                    row.l2_error,
+                    chart_left,
+                    chart_top,
+                    chart_right,
+                    chart_bottom,
+                    y_min=0.0,
+                    y_max=y_max,
+                )
+                for row in rows
+                if row.profile_key == profile_key and row.scheme_key == scheme_key
+            ]
+            parts.append(_polyline(curve, stroke=SCHEME_COLORS[scheme_key], width=3.0))
 
     parts.append("</svg>")
     return "\n".join(parts) + "\n"

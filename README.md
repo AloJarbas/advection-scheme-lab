@@ -13,6 +13,7 @@ This repo opens with a tight first packet instead of a vague promise:
 - a generated SVG/PNG figure, CSV sidecar, report, notebook, and tests
 - a TVD minmod follow-up that adds a real middle lane instead of pretending the choice is only blur versus ringing
 - a CFL sweep follow-up that shows the old ranking compressing when the timestep itself becomes almost a pure grid shift
+- a limiter-family follow-up that shows the bounded lane itself splitting into a smoother MC choice and a sharper Superbee choice
 
 ## Thesis
 
@@ -26,7 +27,12 @@ The limiter follow-up sharpens that reading instead of replacing it.
 
 - **TVD minmod** keeps the square pulse monotone and much cleaner than Lax-Wendroff.
 - It also stays much sharper than upwind on the Gaussian.
-- But it still does not beat unrestricted Lax-Wendroff on the smooth-wave lane.
+
+The limiter-family follow-up sharpens it again.
+
+- **TVD MC** is the calmer bounded smooth-wave choice in this packet.
+- **TVD Superbee** is the sharper bounded jump choice.
+- So even the bounded lane is not one thing.
 
 That tradeoff is the whole point of the repo. It turns a classroom slogan into something you can inspect, rerun, and extend.
 
@@ -49,6 +55,12 @@ python3 -m advectionlab.cli render-cfl-sweep-followup \
   --output assets/advection-cfl-sweep-followup.svg \
   --png-output assets/advection-cfl-sweep-followup.png
 python3 -m advectionlab.cli write-cfl-sweep-csv --output assets/advection-cfl-sweep-followup.csv
+python3 scripts/generate_limiter_family_followup.py
+python3 -m advectionlab.cli render-limiter-family-followup \
+  --output assets/advection-limiter-family-followup.svg \
+  --png-output assets/advection-limiter-family-followup.png \
+  --cfl 0.95
+python3 -m advectionlab.cli write-limiter-family-csv --output assets/advection-limiter-family-followup.csv
 ```
 
 ## Repo layout
@@ -60,6 +72,7 @@ python3 -m advectionlab.cli write-cfl-sweep-csv --output assets/advection-cfl-sw
 - `scripts/generate_gallery.py` regenerates the figure, CSV, report, and notebook
 - `scripts/generate_limiter_followup.py` regenerates the limiter follow-up figure, CSV, report, and notebook
 - `scripts/generate_cfl_sweep_followup.py` regenerates the CFL sweep follow-up figure, CSV, report, and notebook
+- `scripts/generate_limiter_family_followup.py` regenerates the limiter-family follow-up figure, CSV, report, and notebook
 - `reports/linear-advection-scheme-tradeoffs.md` gives the first bounded read
 - `notebooks/advection_scheme_tradeoffs.ipynb` is the companion notebook
 
@@ -99,6 +112,20 @@ If the update moves toward a one-cell shift, the old ranking starts to compress.
 - But as CFL approaches 1 on this periodic one-turn problem, every scheme gets pulled toward the same exact grid-translation limit.
 
 That does not erase the earlier tradeoff. It just puts a clean boundary around it: away from unit CFL, scheme personality dominates; near unit CFL, the step itself does more of the work.
+
+## Limiter-family follow-up
+
+![TVD limiter family follow-up](assets/advection-limiter-family-followup.png)
+
+The next loophole inside the bounded story is that "use a limiter" is still too vague.
+
+This packet keeps the same one-turn periodic transport problem and changes only the limiter choice.
+
+- **TVD MC** is the smooth bounded winner here.
+- **TVD Superbee** is the sharp bounded jump winner here.
+- **TVD minmod** still matters as the conservative baseline, but it is no longer the whole bounded story.
+
+That is a better design read than a single "TVD" label. Once the repo enters the bounded family, the smooth lane and jump lane split again.
 
 ## Why this repo is worth its own home
 
