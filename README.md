@@ -14,6 +14,7 @@ This repo opens with a tight first packet instead of a vague promise:
 - a TVD minmod follow-up that adds a real middle lane instead of pretending the choice is only blur versus ringing
 - a CFL sweep follow-up that shows the old ranking compressing when the timestep itself becomes almost a pure grid shift
 - a limiter-family follow-up that shows the bounded lane itself splitting into a smoother MC choice and a sharper Superbee choice
+- a modified-equation follow-up that makes the linear diffusion-versus-dispersion tradeoff explicit and then shows why the bounded limiter family steps off that curve instead of merely sliding along it
 
 ## Thesis
 
@@ -61,18 +62,25 @@ python3 -m advectionlab.cli render-limiter-family-followup \
   --png-output assets/advection-limiter-family-followup.png \
   --cfl 0.95
 python3 -m advectionlab.cli write-limiter-family-csv --output assets/advection-limiter-family-followup.csv
+python3 scripts/generate_modified_equation_followup.py
+python3 -m advectionlab.cli render-modified-equation-followup \
+  --output assets/advection-modified-equation-followup.svg \
+  --png-output assets/advection-modified-equation-followup.png \
+  --focus-cfl 0.95
+python3 -m advectionlab.cli write-modified-equation-csv --output assets/advection-modified-equation-followup.csv
 ```
 
 ## Repo layout
 
 - `advectionlab/core.py` builds the periodic-grid simulation path
-- `advectionlab/analysis.py` holds amplification factors and transport metrics
+- `advectionlab/analysis.py` holds amplification factors, transport metrics, and the modified-equation coefficient study
 - `advectionlab/render.py` renders the public figure as SVG
 - `advectionlab/cli.py` exposes rebuild commands
 - `scripts/generate_gallery.py` regenerates the figure, CSV, report, and notebook
 - `scripts/generate_limiter_followup.py` regenerates the limiter follow-up figure, CSV, report, and notebook
 - `scripts/generate_cfl_sweep_followup.py` regenerates the CFL sweep follow-up figure, CSV, report, and notebook
 - `scripts/generate_limiter_family_followup.py` regenerates the limiter-family follow-up figure, CSV, report, and notebook
+- `scripts/generate_modified_equation_followup.py` regenerates the modified-equation follow-up figure, CSV, report, and notebook
 - `reports/linear-advection-scheme-tradeoffs.md` gives the first bounded read
 - `notebooks/advection_scheme_tradeoffs.ipynb` is the companion notebook
 
@@ -126,6 +134,29 @@ This packet keeps the same one-turn periodic transport problem and changes only 
 - **TVD minmod** still matters as the conservative baseline, but it is no longer the whole bounded story.
 
 That is a better design read than a single "TVD" label. Once the repo enters the bounded family, the smooth lane and jump lane split again.
+
+## Modified-equation follow-up
+
+![Modified-equation follow-up](assets/advection-modified-equation-followup.png)
+
+The next loophole after that is subtler.
+
+Are the linear schemes and the limiter family all just different points on the same diffusion-versus-ringing tradeoff, or is the bounded family doing something qualitatively different?
+
+This sidecar makes the linear smooth-wave story explicit through the low-wavenumber expansion
+
+```text
+log G(θ) ≈ -iνθ - D(ν)θ² + iK(ν)θ³
+```
+
+and then cashes it out against the one-turn transport errors.
+
+- **Lax-Friedrichs** is the most diffusive linear lane.
+- **Lax-Wendroff** is the near-zero-diffusion linear endpoint, so its price is mostly dispersive jump ringing.
+- The TVD family matters because it steps off that linear compromise curve instead of merely sliding along it.
+- Inside the zero-overshoot family, the split survives: **MC** is the smoother bounded choice and **Superbee** is the sharper bounded jump choice.
+
+That makes the limiter-family result more than a scoreboard. It shows exactly where the old linear modified-equation story stops being the whole explanation.
 
 ## Why this repo is worth its own home
 

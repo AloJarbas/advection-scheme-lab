@@ -3,7 +3,7 @@ from __future__ import annotations
 from html import escape
 from pathlib import Path
 
-from .analysis import TransportRow
+from .analysis import ModifiedEquationRow, TransportRow
 from .core import SCHEME_TITLES, SimulationRun
 
 
@@ -422,6 +422,226 @@ def render_limiter_followup_svg(
         parts.append(_polyline(curve, stroke=SCHEME_COLORS[scheme_key], width=3.0))
 
     parts.append("</svg>")
+    return "\n".join(parts) + "\n"
+
+
+def render_modified_equation_followup_svg(
+    rows: tuple[ModifiedEquationRow, ...],
+    *,
+    focus_cfl: float = 0.95,
+) -> str:
+    width = 1760
+    height = 1220
+    left = 60
+    top = 198
+    right = width - 160
+    bottom = height - 72
+    panel_gap_x = 34
+    panel_gap_y = 46
+    panel_width = (right - left - panel_gap_x) / 2
+    panel_height = (bottom - top - panel_gap_y) / 2
+    linear_schemes = ("upwind", "lax-friedrichs", "lax-wendroff")
+    all_schemes = ("upwind", "lax-friedrichs", "lax-wendroff", "tvd-minmod", "tvd-mc", "tvd-superbee")
+
+    def panel_rect(col: int, row: int) -> tuple[float, float]:
+        return left + col * (panel_width + panel_gap_x), top + row * (panel_height + panel_gap_y)
+
+    def chart_frame(col: int, row: int) -> tuple[float, float, float, float]:
+        panel_left, panel_top = panel_rect(col, row)
+        return panel_left + 70, panel_top + 118, panel_left + panel_width - 40, panel_top + panel_height - 58
+
+    def map_generic(
+        x_value: float,
+        y_value: float,
+        x0: float,
+        y0: float,
+        x1: float,
+        y1: float,
+        *,
+        x_min: float,
+        x_max: float,
+        y_min: float,
+        y_max: float,
+    ) -> tuple[float, float]:
+        x = x0 + (x_value - x_min) / (x_max - x_min) * (x1 - x0)
+        y = y1 - (y_value - y_min) / (y_max - y_min) * (y1 - y0)
+        return x, y
+
+    rows_by_key = {(row.scheme_key, round(row.requested_cfl, 2)): row for row in rows}
+    focus_rows = {scheme: rows_by_key[(scheme, round(focus_cfl, 2))] for scheme in all_schemes}
+    mc_focus = focus_rows["tvd-mc"]
+    superbee_focus = focus_rows["tvd-superbee"]
+    lw_focus = focus_rows["lax-wendroff"]
+
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" fill="#fcfcfd"/>',
+        _text(width / 2, 46, "Modified-equation follow-up: where the linear tradeoff stops", size=31, anchor="middle", weight="700"),
+        _paragraph(
+            width / 2,
+            78,
+            [
+                "The linear schemes sit on one diffusion-versus-dispersion curve. The limiter family matters because it can step off that curve instead of merely sliding along it.",
+                f"At CFL {focus_cfl:.2f}, TVD MC reaches Gaussian L2 error {mc_focus.gaussian_l2_error:.4f} with zero overshoot, while Lax-Wendroff reaches {lw_focus.gaussian_l2_error:.4f} but pays square-pulse overshoot {lw_focus.square_overshoot:.3f}.",
+                f"Inside the bounded family itself, Superbee is still the sharpest jump read at square-pulse L2 error {superbee_focus.square_l2_error:.4f}.",
+            ],
+            size=16,
+            fill="#475569",
+            line_height=21,
+            anchor="middle",
+        ),
+    ]
+    legend_y = 168
+    x = 190
+    for key in all_schemes:
+        parts.append(_line(x, legend_y, x + 28, legend_y, stroke=SCHEME_COLORS[key], width=3.5))
+        parts.append(_text(x + 40, legend_y + 5, SCHEME_TITLES[key], size=14, fill="#111827"))
+        x += 220 if key != "tvd-superbee" else 200
+
+    for row_index in range(2):
+        for col_index in range(2):
+            panel_left, panel_top = panel_rect(col_index, row_index)
+            parts.append(
+                f'<rect x="{panel_left:.1f}" y="{panel_top:.1f}" width="{panel_width:.1f}" height="{panel_height:.1f}" fill="#ffffff" stroke="#e5e7eb" rx="18"/>'
+            )
+
+    # Panel 1: diffusion coefficients
+    plot_left, plot_top, plot_right, plot_bottom = chart_frame(0, 0)
+    panel_left, panel_top = panel_rect(0, 0)
+    parts.append(_text(panel_left + 24, panel_top + 34, "Low-wavenumber diffusion coefficient D(ν)", size=20, weight="700"))
+    parts.append(_paragraph(panel_left + 24, panel_top + 56, [
+        "Defined from log G(θ) ≈ -iνθ - D(ν)θ² + iK(ν)θ³ near θ = 0.",
+        "Lax-Wendroff is the nearly zero-diffusion endpoint; Lax-Friedrichs is the most diffusive.",
+    ], size=13, line_height=16))
+    for value in (0.0, 0.1, 0.2, 0.3, 0.4, 0.5):
+        _, y = map_generic(0.2, value, plot_left, plot_top, plot_right, plot_bottom, x_min=0.2, x_max=0.95, y_min=0.0, y_max=0.52)
+        parts.append(_line(plot_left, y, plot_right, y, stroke="#e5e7eb", dash="4 6"))
+        parts.append(_text(plot_left - 12, y + 5, f"{value:.1f}", size=12, anchor="end", fill="#64748b"))
+    for value in (0.2, 0.35, 0.5, 0.65, 0.8, 0.9, 0.95):
+        x_tick, _ = map_generic(value, 0.0, plot_left, plot_top, plot_right, plot_bottom, x_min=0.2, x_max=0.95, y_min=0.0, y_max=0.52)
+        parts.append(_line(x_tick, plot_top, x_tick, plot_bottom, stroke="#f1f5f9", dash="4 6"))
+        parts.append(_text(x_tick, plot_bottom + 26, f"{value:.2f}" if value == 0.95 else f"{value:.2f}".rstrip("0"), size=12, anchor="middle", fill="#64748b"))
+    parts.append(_line(plot_left, plot_top, plot_left, plot_bottom, width=1.5))
+    parts.append(_line(plot_left, plot_bottom, plot_right, plot_bottom, width=1.5))
+    parts.append(_text((plot_left + plot_right) / 2, plot_bottom + 46, "CFL ν", size=14, anchor="middle", fill="#334155", weight="600"))
+    parts.append(_text(plot_left, plot_top - 16, "dimensionless D(ν)", size=13, fill="#334155", weight="600"))
+    for key in linear_schemes:
+        curve = [
+            map_generic(row.requested_cfl, row.diffusion_coeff or 0.0, plot_left, plot_top, plot_right, plot_bottom, x_min=0.2, x_max=0.95, y_min=0.0, y_max=0.52)
+            for row in rows
+            if row.scheme_key == key
+        ]
+        parts.append(_polyline(curve, stroke=SCHEME_COLORS[key], width=3.0))
+
+    # Panel 2: dispersion coefficients
+    plot_left, plot_top, plot_right, plot_bottom = chart_frame(1, 0)
+    panel_left, panel_top = panel_rect(1, 0)
+    parts.append(_text(panel_left + 24, panel_top + 34, "Low-wavenumber dispersion coefficient K(ν)", size=20, weight="700"))
+    parts.append(_paragraph(panel_left + 24, panel_top + 56, [
+        "The sign says which way the third-derivative phase defect bends.",
+        "Lax-Wendroff keeps almost no diffusion, so its leading smooth-wave defect is mostly dispersive.",
+    ], size=13, line_height=16))
+    for value in (-0.12, -0.08, -0.04, 0.0, 0.04, 0.08):
+        _, y = map_generic(0.2, value, plot_left, plot_top, plot_right, plot_bottom, x_min=0.2, x_max=0.95, y_min=-0.13, y_max=0.08)
+        parts.append(_line(plot_left, y, plot_right, y, stroke="#e5e7eb", dash="4 6"))
+        parts.append(_text(plot_left - 12, y + 5, f"{value:+.2f}", size=12, anchor="end", fill="#64748b"))
+    for value in (0.2, 0.35, 0.5, 0.65, 0.8, 0.9, 0.95):
+        x_tick, _ = map_generic(value, 0.0, plot_left, plot_top, plot_right, plot_bottom, x_min=0.2, x_max=0.95, y_min=-0.13, y_max=0.08)
+        parts.append(_line(x_tick, plot_top, x_tick, plot_bottom, stroke="#f1f5f9", dash="4 6"))
+        parts.append(_text(x_tick, plot_bottom + 26, f"{value:.2f}" if value == 0.95 else f"{value:.2f}".rstrip("0"), size=12, anchor="middle", fill="#64748b"))
+    parts.append(_line(plot_left, plot_top, plot_left, plot_bottom, width=1.5))
+    parts.append(_line(plot_left, plot_bottom, plot_right, plot_bottom, width=1.5))
+    zero_y = map_generic(0.2, 0.0, plot_left, plot_top, plot_right, plot_bottom, x_min=0.2, x_max=0.95, y_min=-0.13, y_max=0.08)[1]
+    parts.append(_line(plot_left, zero_y, plot_right, zero_y, stroke="#111827", width=1.2, dash="7 5"))
+    parts.append(_text((plot_left + plot_right) / 2, plot_bottom + 46, "CFL ν", size=14, anchor="middle", fill="#334155", weight="600"))
+    parts.append(_text(plot_left, plot_top - 16, "dimensionless K(ν)", size=13, fill="#334155", weight="600"))
+    for key in linear_schemes:
+        curve = [
+            map_generic(row.requested_cfl, row.dispersion_coeff or 0.0, plot_left, plot_top, plot_right, plot_bottom, x_min=0.2, x_max=0.95, y_min=-0.13, y_max=0.08)
+            for row in rows
+            if row.scheme_key == key
+        ]
+        parts.append(_polyline(curve, stroke=SCHEME_COLORS[key], width=3.0))
+
+    # Panel 3: Gaussian error vs square overshoot
+    plot_left, plot_top, plot_right, plot_bottom = chart_frame(0, 1)
+    panel_left, panel_top = panel_rect(0, 1)
+    parts.append(_text(panel_left + 24, panel_top + 34, f"At CFL {focus_cfl:.2f}: smooth accuracy versus jump overshoot", size=20, weight="700"))
+    parts.append(_paragraph(panel_left + 24, panel_top + 56, [
+        "The linear schemes sit on one visible compromise curve: less Gaussian error usually buys more square-pulse overshoot.",
+        "The TVD markers matter because they drop to the overshoot floor instead of staying on that linear branch.",
+    ], size=13, line_height=16))
+    for value in (0.0, 0.03, 0.06, 0.09, 0.12, 0.15):
+        _, y = map_generic(0.0, value, plot_left, plot_top, plot_right, plot_bottom, x_min=0.0, x_max=0.016, y_min=0.0, y_max=0.16)
+        parts.append(_line(plot_left, y, plot_right, y, stroke="#e5e7eb", dash="4 6"))
+        parts.append(_text(plot_left - 12, y + 5, f"{value:.2f}", size=12, anchor="end", fill="#64748b"))
+    for value in (0.0, 0.004, 0.008, 0.012, 0.016):
+        x_tick, _ = map_generic(value, 0.0, plot_left, plot_top, plot_right, plot_bottom, x_min=0.0, x_max=0.016, y_min=0.0, y_max=0.16)
+        parts.append(_line(x_tick, plot_top, x_tick, plot_bottom, stroke="#f1f5f9", dash="4 6"))
+        parts.append(_text(x_tick, plot_bottom + 26, f"{value:.3f}", size=12, anchor="middle", fill="#64748b"))
+    parts.append(_line(plot_left, plot_top, plot_left, plot_bottom, width=1.5))
+    parts.append(_line(plot_left, plot_bottom, plot_right, plot_bottom, width=1.5))
+    parts.append(_line(plot_left, plot_bottom, plot_right, plot_bottom, stroke="#111827", width=1.2, dash="7 5"))
+    parts.append(_text((plot_left + plot_right) / 2, plot_bottom + 46, "Gaussian one-turn L2 error", size=14, anchor="middle", fill="#334155", weight="600"))
+    parts.append(_text(plot_left, plot_top - 16, "square-pulse overshoot", size=13, fill="#334155", weight="600"))
+    short_labels = {
+        "upwind": "Upwind",
+        "lax-friedrichs": "Lax-F",
+        "lax-wendroff": "Lax-W",
+        "tvd-minmod": "Minmod",
+        "tvd-mc": "MC",
+        "tvd-superbee": "Superbee",
+    }
+    for key in all_schemes:
+        row = focus_rows[key]
+        x, y = map_generic(row.gaussian_l2_error, row.square_overshoot, plot_left, plot_top, plot_right, plot_bottom, x_min=0.0, x_max=0.016, y_min=0.0, y_max=0.16)
+        parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="7.5" fill="{SCHEME_COLORS[key]}" stroke="#ffffff" stroke-width="2"/>')
+        label_offsets = {
+            "upwind": (-12, -10, "end"),
+            "lax-friedrichs": (12, -10, "start"),
+            "lax-wendroff": (12, -12, "start"),
+            "tvd-minmod": (12, -24, "start"),
+            "tvd-mc": (12, 18, "start"),
+            "tvd-superbee": (12, -26, "start"),
+        }
+        dx, dy, anchor = label_offsets[key]
+        parts.append(_text(x + dx, y + dy, short_labels[key], size=13, fill="#111827", anchor=anchor, weight="600"))
+
+    # Panel 4: zero-overshoot family split
+    plot_left, plot_top, plot_right, plot_bottom = chart_frame(1, 1)
+    panel_left, panel_top = panel_rect(1, 1)
+    parts.append(_text(panel_left + 24, panel_top + 34, f"Zero-overshoot family at CFL {focus_cfl:.2f}", size=20, weight="700"))
+    parts.append(_paragraph(panel_left + 24, panel_top + 56, [
+        "Once overshoot is pinned to zero, the family still does not collapse to one answer.",
+        "MC is the smooth bounded winner here; Superbee is the sharpest bounded jump winner.",
+    ], size=13, line_height=16))
+    zero_overshoot_rows = [focus_rows[key] for key in ("upwind", "lax-friedrichs", "tvd-minmod", "tvd-mc", "tvd-superbee")]
+    for value in (0.0, 0.02, 0.04, 0.06, 0.08, 0.10):
+        _, y = map_generic(0.0, value, plot_left, plot_top, plot_right, plot_bottom, x_min=0.0, x_max=0.016, y_min=0.0, y_max=0.105)
+        parts.append(_line(plot_left, y, plot_right, y, stroke="#e5e7eb", dash="4 6"))
+        parts.append(_text(plot_left - 12, y + 5, f"{value:.2f}", size=12, anchor="end", fill="#64748b"))
+    for value in (0.0, 0.004, 0.008, 0.012, 0.016):
+        x_tick, _ = map_generic(value, 0.0, plot_left, plot_top, plot_right, plot_bottom, x_min=0.0, x_max=0.016, y_min=0.0, y_max=0.105)
+        parts.append(_line(x_tick, plot_top, x_tick, plot_bottom, stroke="#f1f5f9", dash="4 6"))
+        parts.append(_text(x_tick, plot_bottom + 26, f"{value:.3f}", size=12, anchor="middle", fill="#64748b"))
+    parts.append(_line(plot_left, plot_top, plot_left, plot_bottom, width=1.5))
+    parts.append(_line(plot_left, plot_bottom, plot_right, plot_bottom, width=1.5))
+    parts.append(_text((plot_left + plot_right) / 2, plot_bottom + 46, "Gaussian one-turn L2 error", size=14, anchor="middle", fill="#334155", weight="600"))
+    parts.append(_text(plot_left, plot_top - 16, "square-pulse L2 error", size=13, fill="#334155", weight="600"))
+    for row in zero_overshoot_rows:
+        x, y = map_generic(row.gaussian_l2_error, row.square_l2_error, plot_left, plot_top, plot_right, plot_bottom, x_min=0.0, x_max=0.016, y_min=0.0, y_max=0.105)
+        parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="7.5" fill="{SCHEME_COLORS[row.scheme_key]}" stroke="#ffffff" stroke-width="2"/>')
+        label_offsets = {
+            "upwind": (-12, -8, "end"),
+            "lax-friedrichs": (-12, 18, "end"),
+            "tvd-minmod": (12, -10, "start"),
+            "tvd-mc": (12, 18, "start"),
+            "tvd-superbee": (12, -12, "start"),
+        }
+        dx, dy, anchor = label_offsets[row.scheme_key]
+        parts.append(_text(x + dx, y + dy, short_labels[row.scheme_key], size=13, fill="#111827", anchor=anchor, weight="600"))
+
+    parts.append('</svg>')
     return "\n".join(parts) + "\n"
 
 

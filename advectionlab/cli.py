@@ -7,9 +7,10 @@ import shutil
 import subprocess
 import tempfile
 
-from .analysis import amplitude_curve, phase_speed_ratio_curve, study_transport
+from .analysis import amplitude_curve, phase_speed_ratio_curve, study_modified_equation_followup, study_transport
 from .core import simulate_transport
 from .render import (
+    render_modified_equation_followup_svg,
     render_cfl_sweep_followup_svg,
     render_limiter_family_followup_svg,
     render_limiter_followup_svg,
@@ -20,6 +21,7 @@ from .render import (
 
 DEFAULT_CFL_SWEEP = tuple(round(0.2 + 0.05 * index, 2) for index in range(17))
 LIMITER_FAMILY_CFLS = (0.4, 0.55, 0.7, 0.85, 0.95)
+MODIFIED_EQUATION_CFLS = (0.2, 0.35, 0.5, 0.65, 0.8, 0.9, 0.95)
 
 
 def export_png(svg_path: Path, png_path: Path) -> None:
@@ -115,6 +117,16 @@ def write_limiter_family_followup_csv(output: Path) -> None:
             writer.writerow(row.as_dict())
 
 
+def write_modified_equation_followup_csv(output: Path) -> None:
+    rows = study_modified_equation_followup(requested_cfls=MODIFIED_EQUATION_CFLS)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0].as_dict().keys()), lineterminator="\n")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row.as_dict())
+
+
 def render_overview(svg_output: Path, png_output: Path | None = None, *, cfl: float = 0.9) -> None:
     amplitude_curves = {scheme: amplitude_curve(scheme, cfl) for scheme in ("upwind", "lax-friedrichs", "lax-wendroff")}
     phase_curves = {scheme: phase_speed_ratio_curve(scheme, cfl) for scheme in ("upwind", "lax-friedrichs", "lax-wendroff")}
@@ -163,6 +175,14 @@ def render_limiter_family_followup(svg_output: Path, png_output: Path | None = N
         export_png(svg_output, png_output)
 
 
+def render_modified_equation_followup(svg_output: Path, png_output: Path | None = None, *, focus_cfl: float = 0.95) -> None:
+    rows = study_modified_equation_followup(requested_cfls=MODIFIED_EQUATION_CFLS)
+    svg = render_modified_equation_followup_svg(rows, focus_cfl=focus_cfl)
+    write_svg(svg, svg_output)
+    if png_output is not None:
+        export_png(svg_output, png_output)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Linear advection scheme tradeoff lab")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -204,6 +224,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     limiter_family_csv_parser.add_argument("--output", required=True)
 
+    render_modified_equation_parser = subparsers.add_parser(
+        "render-modified-equation-followup",
+        help="render the modified-equation follow-up SVG and optional PNG",
+    )
+    render_modified_equation_parser.add_argument("--output", required=True)
+    render_modified_equation_parser.add_argument("--png-output")
+    render_modified_equation_parser.add_argument("--focus-cfl", type=float, default=0.95)
+
+    modified_equation_csv_parser = subparsers.add_parser(
+        "write-modified-equation-csv",
+        help="write the modified-equation follow-up CSV",
+    )
+    modified_equation_csv_parser.add_argument("--output", required=True)
+
     return parser
 
 
@@ -233,6 +267,16 @@ def main() -> None:
         return
     if args.command == "write-limiter-family-csv":
         write_limiter_family_followup_csv(Path(args.output))
+        return
+    if args.command == "render-modified-equation-followup":
+        render_modified_equation_followup(
+            Path(args.output),
+            Path(args.png_output) if args.png_output else None,
+            focus_cfl=args.focus_cfl,
+        )
+        return
+    if args.command == "write-modified-equation-csv":
+        write_modified_equation_followup_csv(Path(args.output))
         return
     raise ValueError(f"unknown command: {args.command}")
 

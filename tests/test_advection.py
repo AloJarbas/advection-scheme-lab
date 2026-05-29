@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import unittest
 
-from advectionlab.analysis import amplitude_curve, study_transport
+from advectionlab.analysis import amplitude_curve, modified_equation_coefficients, study_modified_equation_followup, study_transport
 from advectionlab.core import SCHEME_STEPS, simulate_transport
 
 
@@ -98,6 +98,31 @@ class AdvectionTests(unittest.TestCase):
         high_overshoot = max(0.0, max(high.numerical) - max(high.exact))
         self.assertGreater(low_overshoot, high_overshoot)
         self.assertGreater(high_overshoot, 0.0)
+
+    def test_modified_equation_coefficients_split_diffusion_and_dispersion(self) -> None:
+        upwind_diffusion, upwind_dispersion = modified_equation_coefficients("upwind", 0.95)
+        lf_diffusion, lf_dispersion = modified_equation_coefficients("lax-friedrichs", 0.95)
+        lw_diffusion, lw_dispersion = modified_equation_coefficients("lax-wendroff", 0.95)
+
+        self.assertGreater(lf_diffusion, upwind_diffusion)
+        self.assertGreater(upwind_diffusion, 0.0)
+        self.assertLess(abs(lw_diffusion), 1e-5)
+        self.assertGreater(lw_dispersion, 0.0)
+        self.assertLess(lf_dispersion, 0.0)
+
+    def test_modified_equation_followup_shows_limiter_escape_hatch(self) -> None:
+        rows = {
+            (row.scheme_key, row.requested_cfl): row
+            for row in study_modified_equation_followup(requested_cfls=(0.95,))
+        }
+        lw = rows[("lax-wendroff", 0.95)]
+        mc = rows[("tvd-mc", 0.95)]
+        superbee = rows[("tvd-superbee", 0.95)]
+
+        self.assertGreater(lw.square_overshoot, 0.1)
+        self.assertLess(mc.square_overshoot, 1e-9)
+        self.assertLess(mc.gaussian_l2_error, lw.gaussian_l2_error)
+        self.assertLess(superbee.square_l2_error, mc.square_l2_error)
 
 
 if __name__ == "__main__":
